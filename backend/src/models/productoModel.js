@@ -1,11 +1,13 @@
 import { pool } from '../config/database.js';
+import { aplicarPrecioProducto } from '../utils/precios.js';
 
 const campos = `p.id, COALESCE(p.codigo_terra, p.internal_code, p.slug) AS sku, p.slug AS slug,
   p.name AS nombre, p.description AS descripcion, COALESCE(c.name, p.product_group, 'Sin categoría') AS categoria,
-  COALESCE(p.public_price, 0) AS precio, p.stock_quantity::integer AS stock,
+  COALESCE(p.public_price, 0) AS precio, COALESCE(p.public_price, 0) AS precio_publico,
+  p.precio_mayorista AS precio_mayorista, p.stock_quantity::integer AS stock,
   p.size AS medida, p.color AS detalle, p.imagen_url, COALESCE(p.image_urls, CASE WHEN p.imagen_url IS NULL THEN ARRAY[]::text[] ELSE ARRAY[p.imagen_url] END) AS imagenes, p.video_url, p.colors AS colores, COALESCE(p.activo, p.is_active, TRUE) AS activo`;
 
-export async function listarProductosBD({ buscar = '', categoria = '', pagina = 1, limite = 100, soloActivos = false } = {}) {
+export async function listarProductosBD({ buscar = '', categoria = '', pagina = 1, limite = 100, soloActivos = false, esMayorista = false } = {}) {
   const valores = [];
   const condiciones = [];
   if (soloActivos) condiciones.push('COALESCE(p.activo, p.is_active, TRUE) = TRUE');
@@ -14,7 +16,7 @@ export async function listarProductosBD({ buscar = '', categoria = '', pagina = 
   valores.push(limite, (pagina - 1) * limite);
   const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
   const { rows } = await pool.query(`SELECT ${campos} FROM products p LEFT JOIN categories c ON c.id=p.category_id ${where} ORDER BY p.created_at DESC LIMIT $${valores.length - 1} OFFSET $${valores.length}`, valores);
-  return rows;
+  return rows.map((fila) => aplicarPrecioProducto(fila, esMayorista));
 }
 
 const ESTADOS_VENTA = "('completed','entregado')";
@@ -47,7 +49,7 @@ async function calcularMaximoVentas() {
   return Number(rows[0]?.max_vendido || 0);
 }
 
-export async function obtenerProductoBD(id) {
+export async function obtenerProductoBD(id, { esMayorista = false } = {}) {
   const idStr = String(id || '').trim();
   const { rows } = await pool.query(
     `SELECT ${campos} 
@@ -59,7 +61,7 @@ export async function obtenerProductoBD(id) {
      LIMIT 1`,
     [idStr]
   );
-  const producto = rows[0] || null;
+  const producto = rows[0] ? aplicarPrecioProducto(rows[0], esMayorista) : null;
   if (!producto) return null;
   producto.variantes = await obtenerVariantesBD(producto.id);
   producto.instrucciones = await obtenerInstruccionesBD(producto.id);

@@ -8,6 +8,11 @@ import {
 } from '../models/productoModel.js';
 import { migrateAndSeed } from '../config/migrate_seed.js';
 
+// Un usuario web con rol "mayorista" ve el catálogo completo con precios de mayorista.
+function esMayorista(req) {
+  return req.webUser?.rol === 'mayorista';
+}
+
 export async function seedProductos(req, res, next) {
   try {
     const resultado = await migrateAndSeed({ closePool: false });
@@ -48,6 +53,7 @@ export async function listarProductos(req, res, next) {
       pagina,
       limite,
       soloActivos,
+      esMayorista: esMayorista(req),
     });
 
     return res.json({
@@ -74,7 +80,7 @@ export async function obtenerProducto(req, res, next) {
       });
     }
 
-    const producto = await obtenerProductoBD(id);
+    const producto = await obtenerProductoBD(id, { esMayorista: esMayorista(req) });
 
     if (!producto) {
       return res.status(404).json({

@@ -115,7 +115,8 @@ export async function crearPedido(req, res, next) {
 
     const pedido = await crearPedidoBD(
       clienteId,
-      itemsNormalizados
+      itemsNormalizados,
+      { esMayorista: req.webUser?.rol === 'mayorista' }
     );
 
     return res.status(201).json({

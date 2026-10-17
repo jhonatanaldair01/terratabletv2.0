@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { pool } from '../config/database.js';
+import { parsearPrecioMayorista } from '../utils/precios.js';
 
 const aMonto = (minor) => Number(minor || 0) / 100;
 
-export async function crearPedidoBD(clienteId, items) {
+export async function crearPedidoBD(clienteId, items, { esMayorista = false } = {}) {
   const conexion = await pool.connect();
   try {
     await conexion.query('BEGIN');
@@ -14,16 +15,28 @@ export async function crearPedidoBD(clienteId, items) {
     const detalles = []; let totalMinor = 0;
     for (const item of items) {
       const producto = await conexion.query(
-        `SELECT p.id AS product_id, p.name, p.stock_quantity, v.id AS variant_id, v.sku,
-                COALESCE(v.price_publico, ROUND(COALESCE(p.public_price,0)*100)::bigint) AS price_minor
+        `SELECT p.id AS product_id, p.name, p.stock_quantity, p.public_price, p.precio_mayorista,
+                v.id AS variant_id, v.sku, v.price_publico AS variant_price_minor
          FROM products p LEFT JOIN product_variants v ON v.product_id=p.id AND v.is_active=TRUE
          WHERE p.id=$1 AND COALESCE(p.activo,p.is_active,TRUE)=TRUE LIMIT 1`, [item.productoId]);
       if (!producto.rowCount) throw new Error('Producto no encontrado o inactivo en Supabase');
       const p = producto.rows[0];
       if (Number(p.stock_quantity || 0) < item.cantidad) throw new Error(`Stock insuficiente para ${p.name}`);
-      const subtotalMinor = Number(p.price_minor) * item.cantidad;
+
+      // Precio en centavos: la variante (si existe) usa price_publico en centavos;
+      // el producto usa public_price en unidades mayores. Para mayorista se prefiere
+      // products.precio_mayorista (unidades mayores) cuando es un valor válido.
+      const publicoMinor = p.variant_price_minor != null
+        ? Number(p.variant_price_minor)
+        : Math.round(Number(p.public_price || 0) * 100);
+      const mayoristaPrecio = parsearPrecioMayorista(p.precio_mayorista);
+      const priceMinor = esMayorista && mayoristaPrecio !== null
+        ? Math.round(mayoristaPrecio * 100)
+        : publicoMinor;
+
+      const subtotalMinor = priceMinor * item.cantidad;
       totalMinor += subtotalMinor;
-      detalles.push({ variantId: p.variant_id, nombre: p.name, sku: p.sku, cantidad: item.cantidad, precioUnitario: aMonto(p.price_minor), subtotal: aMonto(subtotalMinor) });
+      detalles.push({ variantId: p.variant_id, nombre: p.name, sku: p.sku, cantidad: item.cantidad, precioUnitario: aMonto(priceMinor), subtotal: aMonto(subtotalMinor) });
     }
     const ticket = `TER-${randomUUID().slice(0, 8).toUpperCase()}`;
     const nuevo = await conexion.query(

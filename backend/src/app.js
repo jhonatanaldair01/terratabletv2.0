@@ -8,6 +8,9 @@ import pedidoRoutes from './routes/pedidoRoutes.js';
 import clienteRoutes from './routes/clienteRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import asistenteRoutes from './routes/asistenteRoutes.js';
+import authWebRoutes from './routes/authWebRoutes.js';
+
+import { authWebOpcional } from './middlewares/authWeb.js';
 
 import { verificarConexion } from './config/database.js';
 
@@ -23,6 +26,11 @@ app.use(cors());
 
 // Permitir recibir JSON (límite alto para fotos en base64 desde el admin).
 app.use(express.json({ limit: '12mb' }));
+
+// Sesión web opcional: si el usuario mayorista inició sesión, deja req.webUser
+// disponible para que el catálogo y los pedidos usen precios de mayorista.
+// No bloquea: un invitado sigue navegando con precios normales.
+app.use('/api', authWebOpcional);
 
 // Ruta principal requerida por la especificación
 app.get('/', (req, res) => {
@@ -95,6 +103,18 @@ app.get('/openapi', (req, res) => {
       '/api/clientes': {
         post: { summary: 'Registrar o buscar cliente' },
       },
+      '/api/auth/login': {
+        post: {
+          summary: 'Iniciar sesión de usuario web (rol mayorista ve precios mayoristas)',
+          responses: { 200: { description: 'Token y datos del usuario' }, 401: { description: 'Credenciales inválidas' } },
+        },
+      },
+      '/api/auth/me': {
+        get: {
+          summary: 'Perfil del usuario web autenticado',
+          responses: { 200: { description: 'Datos del usuario' }, 401: { description: 'Sesión requerida o vencida' } },
+        },
+      },
       '/api/health': {
         get: { summary: 'Verificar salud y conexión a Supabase' },
       },
@@ -154,6 +174,7 @@ app.use('/api/pedidos', pedidoRoutes);
 app.use('/api/clientes', clienteRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/asistente', asistenteRoutes);
+app.use('/api/auth', authWebRoutes);
 
 // Manejo centralizado de errores.
 app.use(rutaNoEncontrada);

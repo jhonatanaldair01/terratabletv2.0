@@ -6,7 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "usuario": "node src/config/crearUsuario.js",
+    "usuarios:migrar": "node src/config/migrarUsuariosWeb.js"
   },
   "keywords": [],
   "author": "",
