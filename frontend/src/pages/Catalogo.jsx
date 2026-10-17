@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useContext, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCarrito } from '../hooks/useCarrito.js';
 import { listarProductos, listarCategorias } from '../services/productoService.js';
+import { SesionContext } from '../context/SesionContext.jsx';
 import { formatoMoneda } from '../utils/formatoMoneda.js';
 import { obtenerIconoCategoria } from '../data/categorias.js';
 import './Catalogo.css';
@@ -61,6 +62,7 @@ export default function Catalogo() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { cantidadTotal, subtotal, agregarProducto } = useCarrito();
+  const { esMayorista } = useContext(SesionContext);
 
   // Estados de datos reales
   const [productos, setProductos] = useState([]);
@@ -113,7 +115,7 @@ export default function Catalogo() {
       });
 
     return () => { cancelado = true; };
-  }, []);
+  }, [esMayorista]);
 
   // Cargar categorías dinámicas desde backend / Supabase
   const [categoriasApi, setCategoriasApi] = useState([]);
@@ -758,7 +760,11 @@ export default function Catalogo() {
                         <div className="flex flex-col gap-space-sm pt-space-xs bg-surface-container-low/50 p-3 sm:p-4 rounded-xl">
                           <div className="flex items-baseline justify-between gap-2">
                             <div className="min-w-0">
-                              {producto.precioOriginal ? (
+                              {producto.esPrecioMayorista ? (
+                                <span className="font-body-sm text-body-sm text-outline line-through">
+                                  {formatoMoneda(producto.precioPublico)}
+                                </span>
+                              ) : producto.precioOriginal ? (
                                 <span className="font-body-sm text-body-sm text-outline line-through">
                                   {formatoMoneda(producto.precioOriginal)}
                                 </span>

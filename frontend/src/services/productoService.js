@@ -9,6 +9,8 @@ export function normalizarProducto(producto) {
     id: producto.id,
     sku: producto.sku || `TRR-${producto.id}`,
     precio,
+    precioPublico: producto.precio_publico != null ? Number(producto.precio_publico) : precio,
+    esPrecioMayorista: producto.es_precio_mayorista === true,
     precioOriginal: producto.precio_original ? Number(producto.precio_original) : null,
     showroom,
     bodega: Number(producto.bodega ?? 0),

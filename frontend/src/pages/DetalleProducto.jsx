@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useContext } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Check, ChevronDown, ChevronRight, CircleMinus, CirclePlus, Eye, FileText, MapPin, ShieldCheck, ShoppingCart, Sparkles, Star, Tag, Truck, X } from 'lucide-react';
 import { obtenerProducto, listarProductos } from '../services/productoService.js';
+import { SesionContext } from '../context/SesionContext.jsx';
 import { useCarrito } from '../hooks/useCarrito.js';
 import { formatoMoneda } from '../utils/formatoMoneda.js';
 import { recortarFondoDeUrl } from '../utils/quitarFondo.js';
@@ -34,6 +35,7 @@ export default function DetalleProducto() {
   const [searchParams, setSearchParams] = useSearchParams();
   const autoAgregar = searchParams.get('agregar') === '1';
   const { agregarProducto } = useCarrito();
+  const { esMayorista } = useContext(SesionContext);
   const [producto, setProducto] = useState(null);
   const [relacionados, setRelacionados] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -58,7 +60,7 @@ export default function DetalleProducto() {
     setCargando(true); setError(''); setFoto(0); setCantidad(1); setDescripcionAbajoAbierta(false); setCuadrosAbiertos(false);
     obtenerProducto(id).then((dato) => { if (activo) setProducto(dato); }).catch((err) => { if (activo) setError(err.message || 'No fue posible cargar el producto.'); }).finally(() => { if (activo) setCargando(false); });
     return () => { activo = false; };
-  }, [id]);
+  }, [id, esMayorista]);
 
   useEffect(() => {
     if (!producto?.categoria) return undefined;
@@ -164,7 +166,7 @@ export default function DetalleProducto() {
         </div>
         <section className="product-buy">
           <h1>{producto.nombre}</h1><div className="product-buy__rating"><span>{[1, 2, 3, 4, 5].map((n) => <Star size={15} fill="currentColor" key={n} />)}</span><small>Producto recomendado TERRA</small></div>
-          <div className="product-buy__price"><strong>{formatoMoneda(producto.precio)}</strong><small>{disponible ? 'Disponible para entrega inmediata' : 'Consultar disponibilidad'}</small></div>
+          <div className="product-buy__price">{producto.esPrecioMayorista && <s className="product-buy__price-old">{formatoMoneda(producto.precioPublico)}</s>}<strong>{formatoMoneda(producto.precio)}</strong><small>{producto.esPrecioMayorista ? 'Precio de mayorista' : (disponible ? 'Disponible para entrega inmediata' : 'Consultar disponibilidad')}</small></div>
           <div className="product-buy__desc-wrap"><p className="product-buy__description collapsed">{producto.descripcion}</p><button type="button" className="product-buy__desc-toggle" onClick={irADescripcion}><Eye size={15} /> Ver descripción completa</button></div>
           <div className="product-buy__quantity"><b>Cantidad:</b><div><button type="button" aria-label="Disminuir" disabled={cantidad <= 1} onClick={() => setCantidad((valor) => Math.max(1, valor - 1))}><CircleMinus size={19} /></button><span>{cantidad}</span><button type="button" aria-label="Aumentar" disabled={cantidad >= Number(producto.stock)} onClick={() => setCantidad((valor) => Math.min(Number(producto.stock), valor + 1))}><CirclePlus size={19} /></button></div></div>
           <button className="product-buy__add" disabled={!disponible} onClick={agregar} type="button">{agregado ? <><Check size={19} /> Agregado al carrito</> : <><ShoppingCart size={19} /> Agregar al carrito</>}</button><Link className="product-buy__now" to="/carrito">Comprar ahora</Link>

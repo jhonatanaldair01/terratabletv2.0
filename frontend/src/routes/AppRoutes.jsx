@@ -7,6 +7,7 @@ import { ShoppingCart, Store, Search, Plus, Minus, Trash2, ArrowRight, CheckCirc
 import { useCarrito } from '../hooks/useCarrito.js';
 import { useProductos } from '../hooks/useProductos.js';
 import { ClienteContext } from '../context/ClienteContext.jsx';
+import { SesionContext } from '../context/SesionContext.jsx';
 import { useContext } from 'react';
 import { categorias, emojiCategoria } from '../data/categorias.js';
 import { formatoMoneda } from '../utils/formatoMoneda.js';
@@ -14,6 +15,7 @@ import { validarDatosCliente } from '../utils/validaciones.js';
 import { crearCliente } from '../services/clienteService.js';
 import { crearPedido } from '../services/pedidoService.js';
 import { MODO_DEMO } from '../services/api.js';
+import { listarProductos } from '../services/productoService.js';
 import Bienvenida from '../pages/Bienvenida.jsx';
 import Categorias from '../pages/Categorias.jsx';
 import DetalleProducto from '../pages/DetalleProducto.jsx';
@@ -40,11 +42,28 @@ import '../Responsive.css';
 import './HeaderOptionsHidden.css';
 
 function Layout() {
-  const { cantidadTotal } = useCarrito();
+  const { cantidadTotal, items, actualizarPrecios } = useCarrito();
+  const { usuario, esMayorista } = useContext(SesionContext);
   const [cuentaAbierta, setCuentaAbierta] = useState(false);
   const [clicsLogo, setClicsLogo] = useState(0);
   const temporizadorLogo = useRef(null);
   const navigate = useNavigate();
+
+  // Al iniciar o cerrar sesión mayorista, refresca los precios del carrito para
+  // que el resumen y el ticket coincidan con el precio vigente, sin perder artículos.
+  useEffect(() => {
+    if (!items.length) return undefined;
+    let cancelado = false;
+    listarProductos({ limite: 200 })
+      .then((lista) => {
+        if (cancelado) return;
+        const mapa = {};
+        for (const p of lista) mapa[String(p.id)] = Number(p.precio);
+        actualizarPrecios(mapa);
+      })
+      .catch(() => { /* sin conexión: se conservan los precios actuales */ });
+    return () => { cancelado = true; };
+  }, [esMayorista, items.length, actualizarPrecios]);
 
   // Easter egg: 5 toques seguidos en el logo/casa abren el panel admin.
   const tocarLogo = (evento) => {
@@ -81,7 +100,7 @@ function Layout() {
           <NavLink to="/" end className="terra-home-btn" title="Inicio" onClick={tocarLogo}>
             <Home size={18} />
           </NavLink>
-          <button type="button" className="terra-login-button" aria-haspopup="dialog" aria-expanded={cuentaAbierta} onClick={() => setCuentaAbierta(true)}><UserRound size={19} /><span>Iniciar sesión</span></button>
+          <button type="button" className="terra-login-button" aria-haspopup="dialog" aria-expanded={cuentaAbierta} onClick={() => setCuentaAbierta(true)} title={usuario ? `${usuario.nombre || usuario.email}${esMayorista ? ' · Mayorista' : ''}` : 'Iniciar sesión'}><UserRound size={19} /><span>{usuario ? (esMayorista ? 'Mayorista' : (String(usuario.nombre || '').split(' ')[0] || 'Mi cuenta')) : 'Iniciar sesión'}</span></button>
         </div>
       </header>
       {cuentaAbierta && <WebAccountModal onClose={() => setCuentaAbierta(false)} />}
@@ -89,6 +108,12 @@ function Layout() {
       {MODO_DEMO && (
         <div className="demo-banner">
           MODO DEMOSTRACIÓN: precios y pedidos simulados para exhibición showroom.
+        </div>
+      )}
+
+      {esMayorista && (
+        <div className="mayorista-banner">
+          Sesión mayorista activa · catálogo completo con precios de mayorista.
         </div>
       )}
 

@@ -221,6 +221,18 @@
   border-bottom: 1px solid #e4c284;
 }
 
+/* Banner de sesión mayorista */
+.mayorista-banner {
+  background-color: #0a7d3f;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-align: center;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid #075f2f;
+}
+
 /* Contenido de página */
 .page-content {
   flex: 1;

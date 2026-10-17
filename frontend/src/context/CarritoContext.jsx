@@ -75,6 +75,19 @@ export function CarritoProvider({ children }) {
 
   const vaciarCarrito = useCallback(() => setItems([]), []);
 
+  // Actualiza el precio de cada línea con un mapa { idProducto: precio }. Se usa al
+  // iniciar/cerrar sesión mayorista para que el carrito y el ticket coincidan con
+  // el precio vigente (normal o mayorista) sin perder los artículos.
+  const actualizarPrecios = useCallback((mapa) => {
+    if (!mapa) return;
+    setItems((anterior) => anterior.map((item) => {
+      const nuevo = Number(mapa[String(item.id)]);
+      return Number.isFinite(nuevo) && nuevo > 0 && nuevo !== item.precio
+        ? { ...item, precio: nuevo }
+        : item;
+    }));
+  }, []);
+
   const valor = useMemo(() => {
     const cantidadTotal = items.reduce((suma, item) => suma + item.cantidad, 0);
     const centavos = items.reduce(
@@ -83,9 +96,9 @@ export function CarritoProvider({ children }) {
     const subtotal = centavos / 100;
     return {
       items, cantidadTotal, subtotal, total: subtotal,
-      agregarProducto, quitarProducto, actualizarCantidad, vaciarCarrito,
+      agregarProducto, quitarProducto, actualizarCantidad, vaciarCarrito, actualizarPrecios,
     };
-  }, [items, agregarProducto, quitarProducto, actualizarCantidad, vaciarCarrito]);
+  }, [items, agregarProducto, quitarProducto, actualizarCantidad, vaciarCarrito, actualizarPrecios]);
 
   return <CarritoContext.Provider value={valor}>{children}</CarritoContext.Provider>;
 }
