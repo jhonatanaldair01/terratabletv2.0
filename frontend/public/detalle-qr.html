@@ -56,12 +56,19 @@
     .stock { font-size: .75rem; font-weight: 800; border-radius: 99px; padding: 6px 12px; }
     .stock.ok { background: #e4f4e9; color: var(--ok); }
     .stock.no { background: #fbe3e6; color: var(--vino); }
-    .desc { color: #4c443d; font-size: .9rem; line-height: 1.6; white-space: pre-line; }
+    .desc {
+      color: #4c443d; font-size: .9rem; line-height: 1.6; white-space: pre-line;
+      max-height: calc(6 * 1.6em); overflow-y: auto;
+    }
     .ficha { margin: 14px 0 0; border-top: 1px solid var(--linea); }
     .ficha div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f2ece3; font-size: .83rem; }
     .ficha dt { color: var(--muted); } .ficha dd { margin: 0; font-weight: 700; text-align: right; }
     .video-box { margin: 14px 0 0; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 16/9; }
     .video-box iframe, .video-box video { width: 100%; height: 100%; border: 0; display: block; }
+    .instrucciones-btn { width: 100%; margin-top: 12px; }
+    .instrucciones-panel { margin-top: 12px; display: grid; gap: 10px; }
+    .instrucciones-panel[hidden] { display: none; }
+    .instrucciones-panel img { width: 100%; display: block; border-radius: 12px; border: 1px solid var(--linea); background: #fff; }
     .botones { display: grid; gap: 10px; margin-top: 16px; }
     .btn {
       display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -70,6 +77,16 @@
     .btn.principal { background: var(--vino); color: #fff; }
     .btn.sec { background: #fff; color: var(--vino); border: 2px solid var(--vino); }
     .btn.ghost { background: transparent; color: var(--muted); font-weight: 600; font-size: .82rem; }
+    .fab-carrito {
+      position: fixed; right: 18px; bottom: 18px; z-index: 50;
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--vino); color: #fff; border: 0; cursor: pointer;
+      border-radius: 999px; padding: 14px 18px; font-weight: 800; font-size: .9rem;
+      box-shadow: 0 12px 28px rgba(166,25,46,.35);
+    }
+    .fab-carrito svg { width: 20px; height: 20px; }
+    .fab-carrito[hidden] { display: none; }
+    .fab-carrito:active { transform: scale(.97); }
     .estado { text-align: center; padding: 50px 20px; color: var(--muted); }
     .estado .spin {
       width: 42px; height: 42px; border-radius: 50%; margin: 0 auto 14px;
@@ -99,6 +116,11 @@
     <footer>TERRA Autoservicio · Santa Cruz — mostrá esta ficha en showroom para asesorarte.</footer>
   </div>
 
+  <button type="button" class="fab-carrito" id="fabCarrito" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"></path></svg>
+    Agregar al carrito
+  </button>
+
   <script>
     (function () {
       var params = new URLSearchParams(location.search);
@@ -107,6 +129,7 @@
       var apiParam = (params.get('api') || '').replace(/\/$/, '');
       var contenido = document.getElementById('contenido');
       var btnFicha = document.getElementById('btnFicha');
+      var fabCarrito = document.getElementById('fabCarrito');
 
       function basesApi() {
         var lista = [];
@@ -137,6 +160,31 @@
         });
       }
 
+      // Imágenes de instrucciones del producto (tabla product_instructions -> imagenes_url).
+      // Acepta un único URL, una lista separada por comas o un arreglo JSON.
+      function instruccionesImagenes(p) {
+        var registros = Array.isArray(p.instrucciones) ? p.instrucciones : (p.instrucciones ? [p.instrucciones] : []);
+        var urls = [];
+        for (var reg of registros) {
+          var valor = reg && (reg.imagenes_url || reg.imagen_url);
+          if (!valor) continue;
+          var texto = String(valor).trim();
+          if (!texto) continue;
+          if (texto[0] === '[') {
+            try {
+              var lista = JSON.parse(texto);
+              if (Array.isArray(lista)) { urls = urls.concat(lista); continue; }
+            } catch (e) {}
+          }
+          if (texto.split(',').length > 1) {
+            urls = urls.concat(texto.split(',').map(function (u) { return u.trim(); }).filter(Boolean));
+          } else {
+            urls.push(texto);
+          }
+        }
+        return urls;
+      }
+
       async function cargar() {
         if (!id) {
           contenido.innerHTML = '<div class="error-box">Falta el <b>?id=</b> en la URL del QR.<br>Ejemplo: <code class="url">/detalle-qr.html?id=3</code></div>';
@@ -144,6 +192,11 @@
           return;
         }
         btnFicha.href = '/productos/' + encodeURIComponent(id);
+        if (fabCarrito) {
+          fabCarrito.addEventListener('click', function () {
+            location.href = '/productos/' + encodeURIComponent(id) + '?agregar=1';
+          });
+        }
         var ultimoError = '';
         for (var base of basesApi()) {
           try {
@@ -183,7 +236,6 @@
         html += '<div class="info">'
           + '<div class="cat">' + esc(p.categoria || 'TERRA') + '</div>'
           + '<h1>' + esc(p.nombre) + '</h1>'
-          + '<div class="sku">SKU ' + esc(p.sku || ('TRR-' + p.id)) + ' · ID ' + esc(p.id) + '</div>'
           + '<div class="precio-row"><span class="precio">' + esc(formatoBs(p.precio)) + '</span>'
           + '<span class="stock ' + (disponible ? 'ok' : 'no') + '">' + (disponible ? '● ' + esc(p.stock) + ' disponibles' : '○ Consultar disponibilidad') + '</span></div>'
           + (p.descripcion ? '<p class="desc">' + esc(p.descripcion) + '</p>' : '')
@@ -198,8 +250,16 @@
             ? '<iframe src="' + embed + '" title="Video" allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>'
             : '<video src="' + esc(p.video_url) + '" controls playsinline preload="metadata"></video>') + '</div>';
         }
+        var imagenesInstrucciones = instruccionesImagenes(p);
+        if (imagenesInstrucciones.length) {
+          html += '<button type="button" class="btn sec instrucciones-btn" id="btnInstr">Instrucciones</button>'
+            + '<div class="instrucciones-panel" id="instrPanel" hidden>'
+            + imagenesInstrucciones.map(function (src) { return '<img src="' + esc(src) + '" alt="Instrucciones del producto">'; }).join('')
+            + '</div>';
+        }
         html += '</div></article>';
         contenido.innerHTML = html;
+        if (fabCarrito) fabCarrito.hidden = !(Number(p.stock) > 0);
 
         var main = document.getElementById('fotoMain');
         contenido.querySelectorAll('.thumbs button').forEach(function (b) {
@@ -209,6 +269,20 @@
             if (main) main.src = imgs[Number(b.dataset.i)];
           });
         });
+
+        var btnInstr = document.getElementById('btnInstr');
+        var panelInstr = document.getElementById('instrPanel');
+        if (btnInstr && panelInstr) {
+          btnInstr.addEventListener('click', function () {
+            if (panelInstr.hasAttribute('hidden')) {
+              panelInstr.removeAttribute('hidden');
+              btnInstr.textContent = 'Ocultar instrucciones';
+            } else {
+              panelInstr.setAttribute('hidden', '');
+              btnInstr.textContent = 'Instrucciones';
+            }
+          });
+        }
       }
 
       cargar();

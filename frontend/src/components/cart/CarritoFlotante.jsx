@@ -32,32 +32,45 @@ export default function CarritoFlotante() {
   };
 
   useEffect(() => {
-    if (!escaneoAbierto || !camaraIniciada) return undefined;
-    setCamaraActiva(false);
+    if (!escaneoAbierto || !camaraActiva) return undefined;
     setCamaraError(null);
-    const scanner = new Html5QrcodeScanner("qr-reader", {
-      fps: 20,
-      qrbox: 200,
-      aspectRatio: 1.0,
-      showTorchButton: true,
-      showFlipCameraButton: true,
-      disableFlip: false,
-    }, false);
+    let scanner;
+    try {
+      scanner = new Html5QrcodeScanner("qr-reader", {
+        fps: 20,
+        qrbox: 200,
+        aspectRatio: 1.0,
+        showTorchButton: true,
+        showFlipCameraButton: true,
+        disableFlip: false,
+      }, false);
+    } catch {
+      setCamaraError("No se pudo inicializar el lector QR.");
+      setCamaraActiva(false);
+      return undefined;
+    }
     scannerRef.current = scanner;
-    scanner.render(
-      (decodedText) => { setQrLeido(decodedText); },
-      (errorMessage) => {
+    try {
+      scanner.render(
+        (decodedText) => { setQrLeido(decodedText); },
+        () => {}
+      ).catch(() => {
         setCamaraError("No se pudo acceder a la cámara. Verifica los permisos.");
-      }
-    );
-    setCamaraActiva(true);
+        setCamaraActiva(false);
+      });
+    } catch {
+      setCamaraError("No se pudo iniciar el escáner. Verifica los permisos de cámara.");
+      setCamaraActiva(false);
+    }
     return () => {
       if (scannerRef.current) {
-        scannerRef.current.clear().then(() => { scannerRef.current = null; });
+        scannerRef.current.clear().then(() => { scannerRef.current = null; }).catch(() => {});
       }
       setCamaraActiva(false);
+      setCamaraIniciada(false);
+      setCamaraError(null);
     };
-  }, [escaneoAbierto, camaraIniciada]);
+  }, [escaneoAbierto, camaraActiva]);
 
   useEffect(() => {
     if (!qrLeido) return;
@@ -148,7 +161,7 @@ export default function CarritoFlotante() {
 
       <div className="cart-fabs">
         {!abierto && (
-          <button type="button" className="cart-qr" onClick={abrirEscaneo} aria-label="Escanear código QR">
+          <button type="button" className="cart-qr" onClick={abrirEscaneo} aria-label="Escanear código QR" hidden>
             <QrCode size={18} />
           </button>
         )}
@@ -178,7 +191,7 @@ export default function CarritoFlotante() {
               <button
                 type="button"
                 className="camara-iniciar-btn"
-                onClick={() => setCamaraIniciada(true)}
+                onClick={() => { setCamaraIniciada(true); setCamaraActiva(true); }}
                 aria-label="Iniciar cámara"
               >
                 <span className="material-symbols-outlined text-[20px]">camera_alt</span>

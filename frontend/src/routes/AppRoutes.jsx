@@ -42,13 +42,30 @@ import './HeaderOptionsHidden.css';
 function Layout() {
   const { cantidadTotal } = useCarrito();
   const [cuentaAbierta, setCuentaAbierta] = useState(false);
+  const [clicsLogo, setClicsLogo] = useState(0);
+  const temporizadorLogo = useRef(null);
+  const navigate = useNavigate();
+
+  // Easter egg: 5 toques seguidos en el logo/casa abren el panel admin.
+  const tocarLogo = (evento) => {
+    clearTimeout(temporizadorLogo.current);
+    const siguiente = clicsLogo + 1;
+    if (siguiente >= 5) {
+      evento.preventDefault();
+      setClicsLogo(0);
+      navigate('/admin/login');
+      return;
+    }
+    setClicsLogo(siguiente);
+    temporizadorLogo.current = setTimeout(() => setClicsLogo(0), 1500);
+  };
 
   return (
     <div className="app-shell">
       <header className="site-header terra-header">
         {/* Espaciador para centrar el logo; el grupo derecho lleva carrito, casa y sesión */}
         <div className="header-spacer" />
-        <Link to="/" className="brand terra-logo" title="TERRA Autoservicio">
+        <Link to="/" className="brand terra-logo" title="TERRA Autoservicio" onClick={tocarLogo}>
           <img src="/logo-terra.png" alt="TERRA Autoservicio" />
         </Link>
         <div className="header-grupo-derecho">
@@ -61,7 +78,7 @@ function Layout() {
             <span>Carrito</span>
             {cantidadTotal > 0 && <b>{cantidadTotal}</b>}
           </NavLink>
-          <NavLink to="/" end className="terra-home-btn" title="Inicio">
+          <NavLink to="/" end className="terra-home-btn" title="Inicio" onClick={tocarLogo}>
             <Home size={18} />
           </NavLink>
           <button type="button" className="terra-login-button" aria-haspopup="dialog" aria-expanded={cuentaAbierta} onClick={() => setCuentaAbierta(true)}><UserRound size={19} /><span>Iniciar sesión</span></button>

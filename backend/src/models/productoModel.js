@@ -70,6 +70,7 @@ export async function obtenerProductoBD(id) {
   const producto = rows[0] || null;
   if (!producto) return null;
   producto.variantes = await obtenerVariantesBD(producto.id);
+  producto.instrucciones = await obtenerInstruccionesBD(producto.id);
   const totalVendido = await calcularVentasProducto(producto.id);
   const maxVendido = await calcularMaximoVentas();
   producto.total_vendido = totalVendido;
@@ -86,6 +87,20 @@ export async function obtenerVariantesBD(productoId) {
        FROM product_variants
        WHERE product_id = $1::uuid AND COALESCE(is_active, TRUE) = TRUE
        ORDER BY created_at ASC`,
+      [productoId]
+    );
+    return rows;
+  } catch {
+    return [];
+  }
+}
+
+// Instrucciones del producto (tabla product_instructions). Si la tabla no existe
+// en el entorno, devuelve lista vacía sin romper el detalle.
+export async function obtenerInstruccionesBD(productoId) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM product_instructions WHERE product_id = $1::uuid',
       [productoId]
     );
     return rows;

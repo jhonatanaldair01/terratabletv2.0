@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Check, ChevronDown, ChevronRight, CircleMinus, CirclePlus, Eye, FileText, MapPin, ShieldCheck, ShoppingCart, Sparkles, Star, Tag, Truck, X } from 'lucide-react';
 import { obtenerProducto, listarProductos } from '../services/productoService.js';
 import { useCarrito } from '../hooks/useCarrito.js';
@@ -26,6 +26,8 @@ function valorDeColor(nombre) {
 
 export default function DetalleProducto() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const autoAgregar = searchParams.get('agregar') === '1';
   const { agregarProducto } = useCarrito();
   const [producto, setProducto] = useState(null);
   const [relacionados, setRelacionados] = useState([]);
@@ -109,6 +111,13 @@ export default function DetalleProducto() {
 
   const fotos = useMemo(() => producto?.imagenes?.length ? producto.imagenes : (producto?.imagen_url ? [producto.imagen_url] : fallbackFotos), [producto]);
   const agregar = () => { for (let indice = 0; indice < cantidad; indice += 1) agregarProducto(producto, 1, color ? { color } : {}); setAgregado(true); setTimeout(() => setAgregado(false), 1800); };
+  const autoAgregadoRef = useRef(false);
+  useEffect(() => {
+    if (!autoAgregar || autoAgregadoRef.current) return;
+    if (!producto || Number(producto.stock) <= 0) return;
+    autoAgregadoRef.current = true;
+    agregarProducto(producto, 1, color ? { color } : {});
+  }, [autoAgregar, producto, color, agregarProducto]);
 
   if (cargando) return <p className="detalle-status">Cargando producto…</p>;
   if (error || !producto) return <div className="detalle-status"><p>{error || 'Producto no encontrado.'}</p><Link to="/catalogo">Volver al catálogo</Link></div>;
