@@ -1,11 +1,13 @@
 
 import app from './src/app.js';
 import { pool } from './src/config/database.js';
+import { migrarColumnas } from './src/config/migrarColumnas.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 
 try {
   await pool.query('SELECT 1');
+  await migrarColumnas();
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log('-----------------------------------');

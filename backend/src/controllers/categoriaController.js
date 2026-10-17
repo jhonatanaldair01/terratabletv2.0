@@ -10,24 +10,10 @@ function slugificar(valor) {
     .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'categoria';
 }
 
-// La tabla `categories` tiene un trigger `set_updated_at` (BEFORE UPDATE) que hace
-// NEW.updated_at := NOW(), pero no tenía la columna. Sin ella, cualquier UPDATE falla
-// con "record new has no field updated_at". La creamos de forma perezosa e idempotente.
-let updatedAtListo;
-function asegurarUpdatedAt() {
-  if (!updatedAtListo) {
-    updatedAtListo = pool
-      .query('ALTER TABLE categories ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()')
-      .catch((error) => { updatedAtListo = null; throw error; });
-  }
-  return updatedAtListo;
-}
-
 export async function crearCategoria(req, res, next) {
   try {
     const nombre = nombreValido(req.body?.nombre);
     if (!nombre) return res.status(400).json({ success: false, mensaje: 'El nombre de la categoría es obligatorio.' });
-    await asegurarUpdatedAt();
     const { rows } = await pool.query(
       `INSERT INTO categories (name, slug, is_active) VALUES ($1, $2, TRUE) RETURNING id, name AS nombre, is_active AS activo`,
       [nombre, `${slugificar(nombre)}-${Date.now()}`]
@@ -43,7 +29,6 @@ export async function actualizarCategoria(req, res, next) {
   try {
     const nombre = nombreValido(req.body?.nombre);
     if (!nombre) return res.status(400).json({ success: false, mensaje: 'El nombre de la categoría es obligatorio.' });
-    await asegurarUpdatedAt();
     const { rows } = await pool.query(
       `UPDATE categories SET name = $1 WHERE id = $2 RETURNING id, name AS nombre, is_active AS activo`,
       [nombre, req.params.id]

@@ -1,3 +1,5 @@
+import { quitarFondo } from '../utils/quitarFondo.js';
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 // Los proyectos nuevos de Supabase usan claves publicables `sb_publishable_*`.
 // Se prioriza esa clave porque la anónima antigua puede quedar invalidada al rotar JWT.
@@ -9,7 +11,7 @@ export async function subirImagenProducto(archivo) {
   if (!archivo?.type?.startsWith('image/')) throw new Error('Selecciona un archivo de imagen válido.');
   if (archivo.size > 8 * 1024 * 1024) throw new Error(`“${archivo.name}” supera el límite de 8 MB.`);
 
-  // Normaliza la foto (máx 1600px). PNG conserva transparencia; JPEG se aplaná sobre blanco.
+  // Normaliza la foto (máx 1600px) y recorta el fondo a transparente (PNG) para poder tintarla.
   const { blob, mime } = await normalizarImagen(archivo);
   const ext = mime === 'image/png' ? '.png' : '.jpg';
   const nombreSeguro = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}${ext}`;
@@ -33,7 +35,6 @@ export async function subirImagenProducto(archivo) {
 
 function normalizarImagen(archivo) {
   return new Promise((resolve, reject) => {
-    const esPng = archivo.type === 'image/png' || archivo.name.toLowerCase().endsWith('.png');
     const lector = new FileReader();
     lector.onerror = () => reject(new Error(`No se pudo leer "${archivo.name}"`));
     lector.onload = () => {
@@ -48,20 +49,14 @@ function normalizarImagen(archivo) {
         lienzo.width = w;
         lienzo.height = h;
         const ctx = lienzo.getContext('2d');
-        if (!esPng) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, w, h);
-        }
         ctx.drawImage(img, 0, 0, w, h);
-        const mime = esPng ? 'image/png' : 'image/jpeg';
-        const calidad = esPng ? undefined : 0.85;
+        quitarFondo(lienzo);
         lienzo.toBlob(
           (blob) => {
             if (!blob) return reject(new Error(`No se pudo procesar "${archivo.name}"`));
-            resolve({ blob, mime });
+            resolve({ blob, mime: 'image/png' });
           },
-          mime,
-          calidad,
+          'image/png',
         );
       };
       img.src = lector.result;

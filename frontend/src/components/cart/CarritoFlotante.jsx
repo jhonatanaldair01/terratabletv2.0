@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Minus, Plus, QrCode, ShoppingCart, Trash2, X } from 'lucide-react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 import { useCarrito } from '../../hooks/useCarrito.js';
+import { obtenerProducto } from '../../services/productoService.js';
 import { formatoMoneda } from '../../utils/formatoMoneda.js';
 import './CarritoFlotante.css';
 
@@ -10,17 +11,45 @@ function esDispositivoMovil() {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 }
 
+// Extrae el id/param del contenido del QR (URL de la ficha o texto con ?id=).
+function idDeCodigoQr(texto) {
+  try {
+    const url = new URL(texto);
+    return url.searchParams.get('id') || url.searchParams.get('producto') || url.searchParams.get('p');
+  } catch {
+    const m = String(texto).match(/[?&](?:id|producto|p)=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+}
+
+const LECTOR_ID = 'qr-reader';
+
 export default function CarritoFlotante() {
   const [abierto, setAbierto] = useState(false);
   const [escaneoAbierto, setEscaneoAbierto] = useState(false);
   const [qrLeido, setQrLeido] = useState(null);
   const [mostrarAvisoCamara, setMostrarAvisoCamara] = useState(false);
-  const [camaraActiva, setCamaraActiva] = useState(false);
+  // inactiva | iniciando | activa | error
+  const [camaraEstado, setCamaraEstado] = useState('inactiva');
   const [camaraError, setCamaraError] = useState(null);
-  const [camaraIniciada, setCamaraIniciada] = useState(false);
-  const scannerRef = useRef(null);
-  const navigate = useNavigate();
-  const { items, cantidadTotal, subtotal, actualizarCantidad, quitarProducto, vaciarCarrito } = useCarrito();
+  const [mensajeQr, setMensajeQr] = useState(null);
+  const [agregandoScan, setAgregandoScan] = useState(false);
+  const lectorRef = useRef(null);
+  // Código ya procesado: evita que la cámara lo repita en cada frame.
+  const codigoRef = useRef(null);
+  const { items, cantidadTotal, subtotal, actualizarCantidad, quitarProducto, vaciarCarrito, agregarProducto } = useCarrito();
+  const agregarRef = useRef(agregarProducto);
+  useEffect(() => { agregarRef.current = agregarProducto; });
+
+  const detenerCamara = async () => {
+    const lector = lectorRef.current;
+    lectorRef.current = null;
+    if (!lector) return;
+    try { await lector.stop(); } catch { /* la camara ya estaba detenida */ }
+    try { lector.clear(); } catch { /* el lector ya estaba limpio */ }
+  };
+
+  const cerrarEscaneo = () => setEscaneoAbierto(false);
 
   const abrirEscaneo = () => {
     if (!esDispositivoMovil()) {
@@ -28,66 +57,81 @@ export default function CarritoFlotante() {
       setTimeout(() => setMostrarAvisoCamara(false), 3000);
       return;
     }
+    codigoRef.current = null;
+    setMensajeQr(null);
+    setAgregandoScan(false);
+    setCamaraEstado('inactiva');
+    setCamaraError(null);
     setEscaneoAbierto(true);
   };
 
-  useEffect(() => {
-    if (!escaneoAbierto || !camaraActiva) return undefined;
+  const iniciarCamara = async () => {
     setCamaraError(null);
-    let scanner;
-    try {
-      scanner = new Html5QrcodeScanner("qr-reader", {
-        fps: 20,
-        qrbox: 200,
-        aspectRatio: 1.0,
-        showTorchButton: true,
-        showFlipCameraButton: true,
-        disableFlip: false,
-      }, false);
-    } catch {
-      setCamaraError("No se pudo inicializar el lector QR.");
-      setCamaraActiva(false);
-      return undefined;
+    setCamaraEstado('iniciando');
+    // El contenedor se renderiza junto al modal, así que ya existe al tocar el botón.
+    if (!document.getElementById(LECTOR_ID)) {
+      setCamaraError('No se pudo preparar el visor de la cámara.');
+      setCamaraEstado('error');
+      return;
     }
-    scannerRef.current = scanner;
+    await detenerCamara();
     try {
-      scanner.render(
-        (decodedText) => { setQrLeido(decodedText); },
+      const lector = new Html5Qrcode(LECTOR_ID, { verbose: false });
+      lectorRef.current = lector;
+      await lector.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+        (texto) => {
+          if (texto === codigoRef.current) return;
+          codigoRef.current = texto;
+          setQrLeido(texto);
+        },
         () => {}
-      ).catch(() => {
-        setCamaraError("No se pudo acceder a la cámara. Verifica los permisos.");
-        setCamaraActiva(false);
-      });
+      );
+      setCamaraEstado('activa');
     } catch {
-      setCamaraError("No se pudo iniciar el escáner. Verifica los permisos de cámara.");
-      setCamaraActiva(false);
+      lectorRef.current = null;
+      setCamaraError('No se pudo acceder a la cámara. Revisá los permisos del navegador e intentá de nuevo.');
+      setCamaraEstado('error');
     }
-    return () => {
-      if (scannerRef.current) {
-        scannerRef.current.clear().then(() => { scannerRef.current = null; }).catch(() => {});
-      }
-      setCamaraActiva(false);
-      setCamaraIniciada(false);
-      setCamaraError(null);
-    };
-  }, [escaneoAbierto, camaraActiva]);
+  };
 
   useEffect(() => {
-    if (!qrLeido) return;
-    let id = null;
-    try {
-      const url = new URL(qrLeido);
-      id = url.searchParams.get('id') || url.searchParams.get('producto') || url.searchParams.get('p');
-    } catch {
-      const m = String(qrLeido).match(/[?&](?:id|producto|p)=([^&]+)/);
-      id = m ? m[1] : null;
+    if (escaneoAbierto) return undefined;
+    detenerCamara();
+    codigoRef.current = null;
+    setMensajeQr(null);
+    setAgregandoScan(false);
+    setCamaraEstado('inactiva');
+    setCamaraError(null);
+    return undefined;
+  }, [escaneoAbierto]);
+
+  useEffect(() => () => { detenerCamara(); }, []);
+
+  useEffect(() => {
+    if (!qrLeido) return undefined;
+    const id = idDeCodigoQr(qrLeido);
+    setQrLeido(null);
+    if (!id) {
+      setMensajeQr('⚠️ Ese código no corresponde a un producto.');
+      return undefined;
     }
-    if (id) {
-      setEscaneoAbierto(false);
-      setQrLeido(null);
-      navigate(`/productos/${id}`);
-    }
-  }, [qrLeido, navigate]);
+    let activo = true;
+    setMensajeQr(null);
+    setAgregandoScan(true);
+    obtenerProducto(id)
+      .then((producto) => {
+        if (!activo) return;
+        const ok = agregarRef.current(producto, 1);
+        setMensajeQr(ok
+          ? `✅ ${producto.nombre} agregado al carrito`
+          : '⚠️ No se pudo agregar (sin stock).');
+      })
+      .catch(() => { if (activo) setMensajeQr('⚠️ Producto no encontrado.'); })
+      .finally(() => { if (activo) setAgregandoScan(false); });
+    return () => { activo = false; };
+  }, [qrLeido]);
 
   return (
     <div className={`cart-widget ${abierto ? 'abierto' : ''}`}>
@@ -161,7 +205,7 @@ export default function CarritoFlotante() {
 
       <div className="cart-fabs">
         {!abierto && (
-          <button type="button" className="cart-qr" onClick={abrirEscaneo} aria-label="Escanear código QR" hidden>
+          <button type="button" className="cart-qr" onClick={abrirEscaneo} aria-label="Escanear código QR">
             <QrCode size={18} />
           </button>
         )}
@@ -182,34 +226,43 @@ export default function CarritoFlotante() {
         </div>
       )}
       {escaneoAbierto && (
-        <div className="qr-modal" role="dialog" aria-modal="true" aria-label="Escanear código QR" onClick={() => setEscaneoAbierto(false)}>
+        <div className="qr-modal" role="dialog" aria-modal="true" aria-label="Escanear código QR" onClick={cerrarEscaneo}>
           <div className="qr-modal__panel" onClick={e => e.stopPropagation()}>
-            <button type="button" className="qr-modal__close" onClick={() => setEscaneoAbierto(false)} aria-label="Cerrar escáner"><X size={20} /></button>
+            <button type="button" className="qr-modal__close" onClick={cerrarEscaneo} aria-label="Cerrar escáner"><X size={20} /></button>
             <h2 className="qr-modal__title">Escanear código QR</h2>
             <p className="qr-modal__sub">Enfocá el código del producto con la cámara</p>
-            {!camaraIniciada && (
+            <div className="qr-modal__view">
+              {camaraEstado === 'inactiva' && <p className="qr-modal__hint">Tocá “Iniciar cámara” para escanear</p>}
+              <div id={LECTOR_ID} />
+              <div className="qr-modal__frame" />
+            </div>
+            {camaraEstado === 'inactiva' && (
               <button
                 type="button"
                 className="camara-iniciar-btn"
-                onClick={() => { setCamaraIniciada(true); setCamaraActiva(true); }}
+                onClick={iniciarCamara}
                 aria-label="Iniciar cámara"
               >
                 <span className="material-symbols-outlined text-[20px]">camera_alt</span>
                 Iniciar cámara
               </button>
             )}
-            {camaraIniciada && !camaraError && !camaraActiva && (
-              <div className="camara-activa">⏳ Iniciando cámara...</div>
-            )}
+            {camaraEstado === 'iniciando' && <div className="camara-activa">⏳ Iniciando cámara...</div>}
+            {camaraEstado === 'activa' && <div className="camara-activa">✅ Cámara activa</div>}
             {camaraError && <div className="camara-error">⚠️ {camaraError}</div>}
-            {camaraIniciada && !camaraError && camaraActiva && (
-              <>
-                <div className="camara-activa">✅ Cámara activa</div>
-                <div className="qr-modal__view"><div id="qr-reader" /></div>
-              </>
+            {camaraEstado === 'error' && (
+              <button
+                type="button"
+                className="camara-iniciar-btn"
+                onClick={iniciarCamara}
+                aria-label="Reintentar cámara"
+              >
+                <span className="material-symbols-outlined text-[20px]">refresh</span>
+                Reintentar
+              </button>
             )}
-            <div className="qr-modal__frame" />
-            {qrLeido && <p className="qr-modal__ok">Código leído: <b>{qrLeido}</b></p>}
+            {agregandoScan && <div className="camara-activa">⏳ Agregando al carrito...</div>}
+            {mensajeQr && <p className="qr-modal__ok">{mensajeQr}</p>}
           </div>
         </div>
       )}

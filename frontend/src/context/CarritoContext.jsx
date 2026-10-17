@@ -1,9 +1,33 @@
-import { createContext, useCallback, useMemo, useState } from 'react';
+import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 
 export const CarritoContext = createContext(null);
 
+// El carrito se guarda por pestaña (sessionStorage): sobrevive a las recargas
+// completas que ocurren al escanear varios QR en el mismo celular
+// (detalle-qr.html -> /productos/:id?agregar=1), pero NO se comparte entre
+// pestañas ni entre dispositivos, así cada persona tiene su propio carrito.
+const CLAVE_CARRITO = 'terra_carrito';
+
+function carritoGuardado() {
+  try {
+    const lista = JSON.parse(sessionStorage.getItem(CLAVE_CARRITO) || '[]');
+    if (!Array.isArray(lista)) return [];
+    return lista.filter((item) => item && typeof item === 'object' && item.lineaId && item.id
+      && Number.isFinite(Number(item.precio)) && Number.isFinite(Number(item.cantidad)));
+  } catch {
+    return [];
+  }
+}
+
 export function CarritoProvider({ children }) {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(carritoGuardado);
+
+  useEffect(() => {
+    try {
+      if (items.length) sessionStorage.setItem(CLAVE_CARRITO, JSON.stringify(items));
+      else sessionStorage.removeItem(CLAVE_CARRITO);
+    } catch { /* sin almacenamiento */ }
+  }, [items]);
 
   const agregarProducto = useCallback((producto, cantidad = 1, opcion = {}) => {
     const id = String(producto?.id || '').trim();

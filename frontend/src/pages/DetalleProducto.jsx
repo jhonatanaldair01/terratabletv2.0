@@ -4,11 +4,16 @@ import { Check, ChevronDown, ChevronRight, CircleMinus, CirclePlus, Eye, FileTex
 import { obtenerProducto, listarProductos } from '../services/productoService.js';
 import { useCarrito } from '../hooks/useCarrito.js';
 import { formatoMoneda } from '../utils/formatoMoneda.js';
+import { recortarFondoDeUrl } from '../utils/quitarFondo.js';
 import './DetalleProducto.css';
 
 const COLORES_BASE = [{ nombre: 'Gris marengo', valor: '#54595f' }, { nombre: 'Gris perla', valor: '#9b9b9b' }, { nombre: 'Azul petróleo', valor: '#455a64' }, { nombre: 'Terracota', valor: '#8d5b4c' }];
 const COLORES_CUADROS = [{ nombre: 'Blanco humo', valor: '#f1efe9' }, { nombre: 'Negro azabache', valor: '#211d1d' }, { nombre: 'Grafito', valor: '#3a3f44' }, { nombre: 'Arena', valor: '#cbb894' }, { nombre: 'Chocolate', valor: '#5a3b2a' }, { nombre: 'Borgoña', valor: '#8e2828' }, { nombre: 'Azul noche', valor: '#233a63' }, { nombre: 'Celeste', valor: '#8fb8d8' }, { nombre: 'Verde bosque', valor: '#2f5233' }, { nombre: 'Verde oliva', valor: '#5d6b4f' }, { nombre: 'Mostaza', valor: '#cf8a2b' }, { nombre: 'Rosa empolvado', valor: '#d9a5a0' }];
 const fallbackFotos = ['https://lh3.googleusercontent.com/aida-public/AB6AXuA_0IGZ5s0DjeFACULr5bK2zw8jNwY_4ygmGz_44Kd65Bb13xtjOAWf_fm_SD4sowQnCxMzCwU_ZD_DlXUGgV7nKlnEyI79XA31Ux46VzAsTssz8IaDziDvdlnriYJndVw-fukT_eKvBuoZjUQ7TIUvqEM4I4DJGnrYW6oGxCOdnHj9ITk2DfjrYEHNFCmMYaIS2C5r-2fvONkPGloLIafxeLD40KaqPvmWXpvg6uCzUefyXPRDfnq2'];
+
+// Los datos/selector de colores quedan OCULTOS a propósito (se trabaja solo con las imágenes).
+// El código de colores se conserva: pone true para volver a mostrarlo.
+const MOSTRAR_COLORES = false;
 
 function videoIncrustado(url) {
   const coincidencia = String(url || '').match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{6,})/);
@@ -26,7 +31,7 @@ function valorDeColor(nombre) {
 
 export default function DetalleProducto() {
   const { id } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const autoAgregar = searchParams.get('agregar') === '1';
   const { agregarProducto } = useCarrito();
   const [producto, setProducto] = useState(null);
@@ -67,6 +72,7 @@ export default function DetalleProducto() {
   // - Variantes (product_variants): `producto.variantes` con la clave `color`.
   // Si el producto no tiene colores registrados, la ficha no muestra ninguno.
   const colores = useMemo(() => {
+    if (!MOSTRAR_COLORES) return [];
     const registros = [
       ...(Array.isArray(producto?.colores) ? producto.colores : []),
       ...(Array.isArray(producto?.variantes) ? producto.variantes : []),
@@ -110,6 +116,22 @@ export default function DetalleProducto() {
   useEffect(() => { setColor(colores.length ? colores[0] : null); }, [producto?.id, colores]);
 
   const fotos = useMemo(() => producto?.imagenes?.length ? producto.imagenes : (producto?.imagen_url ? [producto.imagen_url] : fallbackFotos), [producto]);
+
+  // Recorta el fondo de cada foto en el navegador (sin re-subir la imagen) y lo usa como máscara del color.
+  const [recortes, setRecortes] = useState({});
+  useEffect(() => {
+    let activo = true;
+    const urls = fotos.filter(Boolean);
+    if (!urls.length) return undefined;
+    Promise.all(urls.map(async (url) => {
+      try { return [url, await recortarFondoDeUrl(url)]; } catch { return null; }
+    })).then((pares) => {
+      if (activo) setRecortes(Object.fromEntries(pares.filter(Boolean)));
+    });
+    return () => { activo = false; };
+  }, [fotos]);
+
+  const fuenteDe = (url) => recortes[url] || url;
   const agregar = () => { for (let indice = 0; indice < cantidad; indice += 1) agregarProducto(producto, 1, color ? { color } : {}); setAgregado(true); setTimeout(() => setAgregado(false), 1800); };
   const autoAgregadoRef = useRef(false);
   useEffect(() => {
@@ -117,7 +139,13 @@ export default function DetalleProducto() {
     if (!producto || Number(producto.stock) <= 0) return;
     autoAgregadoRef.current = true;
     agregarProducto(producto, 1, color ? { color } : {});
-  }, [autoAgregar, producto, color, agregarProducto]);
+    // Quita ?agregar=1 de la URL: si no, al refrescar la página se vuelve a agregar solo.
+    setSearchParams((previos) => {
+      const siguientes = new URLSearchParams(previos);
+      siguientes.delete('agregar');
+      return siguientes;
+    }, { replace: true });
+  }, [autoAgregar, producto, color, agregarProducto, setSearchParams]);
 
   if (cargando) return <p className="detalle-status">Cargando producto…</p>;
   if (error || !producto) return <div className="detalle-status"><p>{error || 'Producto no encontrado.'}</p><Link to="/catalogo">Volver al catálogo</Link></div>;
@@ -130,8 +158,8 @@ export default function DetalleProducto() {
     <section className="product-detail__card">
       <div className="product-detail__layout">
         <div className="product-gallery">
-          <div className="product-gallery__main">{fotos[foto] ? <span className="tint-wrap"><img className="tint-base" src={fotos[foto]} alt={producto.nombre} />{color && <i className="tint-overlay" style={{ backgroundColor: color.valor }} aria-hidden="true" />}</span> : null}{producto.esMasVendido && <b><Sparkles size={13} /> Más vendido</b>}{color && <span className="product-gallery__color-badge"><i style={{ backgroundColor: color.valor }} aria-hidden="true" />{color.nombre}</span>}{colores.length > 0 && <div className="product-gallery__colors"><div className="product-gallery__swatches">{coloresVisibles.map((opcion, indice) => <button type="button" title={opcion.nombre} aria-label={opcion.nombre} key={`${opcion.nombre}-${opcion.valor}-${indice}`} onClick={() => setColor(opcion)} className={color?.nombre === opcion.nombre ? 'active' : ''} style={{ backgroundColor: opcion.valor }} />)}{coloresRestantes.length > 0 && <button type="button" className="paleta-custom" onClick={() => setCuadrosAbiertos((v) => !v)} aria-expanded={cuadrosAbiertos} title="Más colores">+</button>}</div>{cuadrosAbiertos && coloresRestantes.length > 0 && <div className="paleta-cuadros">{coloresRestantes.map((opcion, indice) => <button type="button" title={opcion.nombre} aria-label={opcion.nombre} key={`${opcion.nombre}-${opcion.valor}-${indice}`} onClick={() => { setColor(opcion); setCuadrosAbiertos(false); }} className={color?.nombre === opcion.nombre ? 'active' : ''} style={{ backgroundColor: opcion.valor }} />)}</div>}</div>}{producto.video_url && <button type="button" className="video-mini" onClick={() => setVideoAmpliado(true)} aria-label="Ampliar video del producto">{videoEmbed ? <iframe src={videoSrc} title={`Video de ${producto.nombre}`} tabIndex={-1} /> : <video src={producto.video_url} autoPlay muted loop playsInline preload="metadata" />}</button>}</div>
-          <div className="product-gallery__thumbs">{fotos.slice(0, 4).map((src, indice) => <button className={foto === indice ? 'active' : ''} onClick={() => setFoto(indice)} type="button" key={`${src}-${indice}`}><span className="tint-wrap tint-thumb"><img className="tint-base" src={src} alt={`Vista ${indice + 1}`} />{color && <i className="tint-overlay" style={{ backgroundColor: color.valor }} aria-hidden="true" />}</span><span>Vista {indice + 1}</span></button>)}</div>
+          <div className="product-gallery__main">{fotos[foto] ? <span className="tint-wrap"><img className="tint-base" src={fuenteDe(fotos[foto])} alt={producto.nombre} />{color && <i className="tint-overlay" style={{ backgroundColor: color.valor, WebkitMaskImage: `url("${fuenteDe(fotos[foto])}")`, maskImage: `url("${fuenteDe(fotos[foto])}")` }} aria-hidden="true" />}</span> : null}{producto.esMasVendido && <b><Sparkles size={13} /> Más vendido</b>}{color && <span className="product-gallery__color-badge"><i style={{ backgroundColor: color.valor }} aria-hidden="true" />{color.nombre}</span>}{colores.length > 0 && <div className="product-gallery__colors"><div className="product-gallery__swatches">{coloresVisibles.map((opcion, indice) => <button type="button" title={opcion.nombre} aria-label={opcion.nombre} key={`${opcion.nombre}-${opcion.valor}-${indice}`} onClick={() => setColor(opcion)} className={color?.nombre === opcion.nombre ? 'active' : ''} style={{ backgroundColor: opcion.valor }} />)}{coloresRestantes.length > 0 && <button type="button" className="paleta-custom" onClick={() => setCuadrosAbiertos((v) => !v)} aria-expanded={cuadrosAbiertos} title="Más colores">+</button>}</div>{cuadrosAbiertos && coloresRestantes.length > 0 && <div className="paleta-cuadros">{coloresRestantes.map((opcion, indice) => <button type="button" title={opcion.nombre} aria-label={opcion.nombre} key={`${opcion.nombre}-${opcion.valor}-${indice}`} onClick={() => { setColor(opcion); setCuadrosAbiertos(false); }} className={color?.nombre === opcion.nombre ? 'active' : ''} style={{ backgroundColor: opcion.valor }} />)}</div>}</div>}{producto.video_url && <button type="button" className="video-mini" onClick={() => setVideoAmpliado(true)} aria-label="Ampliar video del producto">{videoEmbed ? <iframe src={videoSrc} title={`Video de ${producto.nombre}`} tabIndex={-1} /> : <video src={producto.video_url} autoPlay muted loop playsInline preload="metadata" />}</button>}</div>
+          <div className="product-gallery__thumbs">{fotos.slice(0, 4).map((src, indice) => <button className={foto === indice ? 'active' : ''} onClick={() => setFoto(indice)} type="button" key={`${src}-${indice}`}><span className="tint-wrap tint-thumb"><img className="tint-base" src={fuenteDe(src)} alt={`Vista ${indice + 1}`} />{color && <i className="tint-overlay" style={{ backgroundColor: color.valor, WebkitMaskImage: `url("${fuenteDe(src)}")`, maskImage: `url("${fuenteDe(src)}")` }} aria-hidden="true" />}</span><span>Vista {indice + 1}</span></button>)}</div>
           {videoAmpliado && producto.video_url && <div className="video-modal" onClick={() => setVideoAmpliado(false)}><div className="video-box" onClick={e => e.stopPropagation()}><button type="button" className="video-close" onClick={() => setVideoAmpliado(false)} aria-label="Cerrar video"><X size={20} /></button>{videoEmbed ? <iframe src={videoSrc} title={`Video de ${producto.nombre}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen /> : <video src={producto.video_url} controls autoPlay playsInline />}</div></div>}
         </div>
         <section className="product-buy">
